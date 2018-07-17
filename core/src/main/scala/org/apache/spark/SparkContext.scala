@@ -393,6 +393,14 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     Utils.setLogLevel(org.apache.log4j.Level.toLevel(logLevel))
   }
 
+/*
+构造函数
+
+1、创建SparkUI
+2、调用 createTaskScheduler 方法
+3、创建DAGScheduler
+4、调用 TaskScheduler 的start方法
+ */
   try {
     _conf = config.clone()
     _conf.validateSettings()
@@ -468,6 +476,9 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
         None
       }
 
+/*
+spark UI
+ */
     _ui =
       if (conf.getBoolean("spark.ui.enabled", true)) {
         Some(SparkUI.createLiveUI(this, _conf, listenerBus, _jobProgressListener,
@@ -518,13 +529,22 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
+/*
+调用 createTaskScheduler 方法
+ */
     // Create and start the scheduler
     val (sched, ts) = SparkContext.createTaskScheduler(this, master)
     _schedulerBackend = sched
     _taskScheduler = ts
+/*
+创建DAGScheduler
+ */
     _dagScheduler = new DAGScheduler(this)
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
+/*
+调用 TaskScheduler 的start方法
+ */
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
     _taskScheduler.start()
@@ -2626,6 +2646,9 @@ object SparkContext extends Logging {
         scheduler.initialize(backend)
         (backend, scheduler)
 
+/*
+standalone方式
+ */
       case SPARK_REGEX(sparkUrl) =>
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
@@ -2653,6 +2676,9 @@ object SparkContext extends Logging {
         }
         (backend, scheduler)
 
+/*
+yarn方式
+ */
       case "yarn-standalone" | "yarn-cluster" =>
         if (master == "yarn-standalone") {
           logWarning(
