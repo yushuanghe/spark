@@ -1845,6 +1845,11 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
    * Run a function on a given set of partitions in an RDD and pass the results to the given
    * handler function. This is the main entry point for all actions in Spark.
    */
+  /*
+  经过 runJob 多次重载调用，调用此方法，此方法调用DAGScheduler的 runJob方法
+
+  @author yushuanghe
+   */
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
@@ -1859,6 +1864,11 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     if (conf.getBoolean("spark.logLineage", false)) {
       logInfo("RDD's recursive dependencies:\n" + rdd.toDebugString)
     }
+    /*
+    调用 DAGScheduler 的 runJob 方法
+
+    @author yushuanghe
+     */
     dagScheduler.runJob(rdd, cleanedFunc, partitions, callSite, resultHandler, localProperties.get)
     progressBar.foreach(_.finishAll())
     rdd.doCheckpoint()
