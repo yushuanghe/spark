@@ -393,14 +393,16 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     Utils.setLogLevel(org.apache.log4j.Level.toLevel(logLevel))
   }
 
-/*
-构造函数
+  /*
+  构造函数
 
-1、创建SparkUI
-2、调用 createTaskScheduler 方法
-3、创建DAGScheduler
-4、调用 TaskScheduler 的start方法
- */
+  1、创建SparkUI
+  2、调用 createTaskScheduler 方法
+  3、创建DAGScheduler
+  4、调用 TaskScheduler 的start方法
+
+  @author yushuanghe
+   */
   try {
     _conf = config.clone()
     _conf.validateSettings()
@@ -476,9 +478,11 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
         None
       }
 
-/*
-spark UI
- */
+    /*
+    spark UI
+
+    @author yushuanghe
+     */
     _ui =
       if (conf.getBoolean("spark.ui.enabled", true)) {
         Some(SparkUI.createLiveUI(this, _conf, listenerBus, _jobProgressListener,
@@ -529,22 +533,28 @@ spark UI
     _heartbeatReceiver = env.rpcEnv.setupEndpoint(
       HeartbeatReceiver.ENDPOINT_NAME, new HeartbeatReceiver(this))
 
-/*
-调用 createTaskScheduler 方法
- */
+    /*
+    调用 createTaskScheduler 方法
+
+    @author yushuanghe
+     */
     // Create and start the scheduler
     val (sched, ts) = SparkContext.createTaskScheduler(this, master)
     _schedulerBackend = sched
     _taskScheduler = ts
-/*
-创建DAGScheduler
- */
+    /*
+    创建DAGScheduler
+
+    @author yushuanghe
+     */
     _dagScheduler = new DAGScheduler(this)
     _heartbeatReceiver.ask[Boolean](TaskSchedulerIsSet)
 
-/*
-调用 TaskScheduler 的start方法
- */
+    /*
+    调用 TaskScheduler 的start方法
+
+    @author yushuanghe
+     */
     // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
     // constructor
     _taskScheduler.start()

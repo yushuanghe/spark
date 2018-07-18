@@ -127,9 +127,11 @@ private[spark] class TaskSchedulerImpl(
     this.backend = backend
     // temporarily set rootPool name to empty
     rootPool = new Pool("", schedulingMode, 0, 0)
-/*
-创建调度池
- */
+    /*
+    创建调度池
+
+    @author yushuanghe
+     */
     schedulableBuilder = {
       schedulingMode match {
         case SchedulingMode.FIFO =>
@@ -144,9 +146,11 @@ private[spark] class TaskSchedulerImpl(
   def newTaskId(): Long = nextTaskId.getAndIncrement()
 
   override def start() {
-/*
-调用backend的start方法
- */
+    /*
+    调用backend的start方法
+
+    @author yushuanghe
+     */
     backend.start()
 
     if (!isLocal && conf.getBoolean("spark.speculation", false)) {

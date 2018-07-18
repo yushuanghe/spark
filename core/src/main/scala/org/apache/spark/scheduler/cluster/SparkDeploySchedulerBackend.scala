@@ -89,15 +89,19 @@ private[spark] class SparkDeploySchedulerBackend(
     val appUIAddress = sc.ui.map(_.appUIAddress).getOrElse("")
     val coresPerExecutor = conf.getOption("spark.executor.cores").map(_.toInt)
 
-/*
-这个ApplicationDescription非常重要，代表了当前执行的app的一些情况，包括app最大需要多少cpu，每个Executor上需要多少内存
- */
+    /*
+    这个ApplicationDescription非常重要，代表了当前执行的app的一些情况，包括app最大需要多少cpu，每个Executor上需要多少内存
+
+    @author yushuanghe
+     */
     val appDesc = new ApplicationDescription(sc.appName, maxCores, sc.executorMemory,
       command, appUIAddress, sc.eventLogDir, sc.eventLogCodec, coresPerExecutor)
 
-/*
-创建AppClient
- */
+    /*
+    创建AppClient
+
+    @author yushuanghe
+     */
     client = new AppClient(sc.env.rpcEnv, masters, appDesc, this, conf)
     client.start()
     launcherBackend.setState(SparkAppHandle.State.SUBMITTED)

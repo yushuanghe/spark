@@ -107,10 +107,12 @@ private[spark] class AppClient(
             val masterRef =
               rpcEnv.setupEndpointRef(Master.SYSTEM_NAME, masterAddress, Master.ENDPOINT_NAME)
 
-/*
-向master发送信息，master会进行app的注册
-RegisterApplication是case class
- */
+            /*
+            向master发送信息，master会进行app的注册
+            RegisterApplication是case class
+
+            @author yushuanghe
+             */
             masterRef.send(RegisterApplication(appDescription, self))
           } catch {
             case ie: InterruptedException => // Cancelled
@@ -128,9 +130,11 @@ RegisterApplication是case class
      * nthRetry means this is the nth attempt to register with master.
      */
     private def registerWithMaster(nthRetry: Int) {
-/*
-调用tryRegisterAllMasters
- */
+      /*
+      调用tryRegisterAllMasters
+
+      @author yushuanghe
+       */
       registerMasterFutures.set(tryRegisterAllMasters())
       registrationRetryTimer.set(registrationRetryThread.scheduleAtFixedRate(new Runnable {
         override def run(): Unit = {
