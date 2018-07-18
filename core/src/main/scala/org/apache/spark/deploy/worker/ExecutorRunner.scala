@@ -67,6 +67,11 @@ private[deploy] class ExecutorRunner(
   private var shutdownHook: AnyRef = null
 
   private[worker] def start() {
+    /*
+    创建java线程
+
+    @author yushuanghe
+     */
     workerThread = new Thread("ExecutorRunner for " + fullId) {
       override def run() { fetchAndRunExecutor() }
     }
@@ -139,6 +144,11 @@ private[deploy] class ExecutorRunner(
    */
   private def fetchAndRunExecutor() {
     try {
+      /*
+      创建 ProcessBuilder
+
+      @author yushuanghe
+       */
       // Launch the process
       val builder = CommandUtils.buildProcessBuilder(appDesc.command, new SecurityManager(conf),
         memory, sparkHome.getAbsolutePath, substituteVariables)
@@ -162,6 +172,12 @@ private[deploy] class ExecutorRunner(
       val header = "Spark Executor Command: %s\n%s\n\n".format(
         formattedCommand, "=" * 40)
 
+      /*
+      重定向输出流到文件
+      将process（executor进程）的 InputStream 和 ErrorStream 输出的信息分别重定向到本地工作目录的 stdout 和 stderr 文件中
+
+      @author yushuanghe
+       */
       // Redirect its stdout and stderr to files
       val stdout = new File(executorDir, "stdout")
       stdoutAppender = FileAppender(process.getInputStream, stdout, conf)
@@ -170,11 +186,27 @@ private[deploy] class ExecutorRunner(
       Files.write(header, stderr, UTF_8)
       stderrAppender = FileAppender(process.getErrorStream, stderr, conf)
 
+      /*
+      调用process.waitFor()方法启动executor进程
+
+      @author yushuanghe
+       */
       // Wait for it to exit; executor may exit with code 0 (when driver instructs it to shutdown)
       // or with nonzero exit code
       val exitCode = process.waitFor()
+      /*
+      executor进程执行完之后拿到返回状态
+
+      @author yushuanghe
+       */
       state = ExecutorState.EXITED
       val message = "Command exited with code " + exitCode
+
+      /*
+      向worker发送 ExecutorStateChanged 信息
+
+      @author yushuanghe
+       */
       worker.send(ExecutorStateChanged(appId, execId, state, Some(message), Some(exitCode)))
     } catch {
       case interrupted: InterruptedException => {

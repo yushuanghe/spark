@@ -428,6 +428,13 @@ private[deploy] class Worker(
       logInfo(s"Master with url $masterUrl requested this worker to reconnect.")
       registerWithMaster()
 
+      /*
+      接收LaunchExecutor后，启动一个ExecutorRunner线程
+      创建executor的工作目录
+      封装启动executor的命令，用ProcessBuilder启动executor
+
+      @author yushuanghe
+       */
     case LaunchExecutor(masterUrl, appId, execId, appDesc, cores_, memory_) =>
       if (masterUrl != activeMasterUrl) {
         logWarning("Invalid Master (" + masterUrl + ") attempted to launch executor.")
@@ -435,12 +442,22 @@ private[deploy] class Worker(
         try {
           logInfo("Asked to launch executor %s/%d for %s".format(appId, execId, appDesc.name))
 
+          /*
+          创建executor本地工作目录
+
+          @author yushuanghe
+           */
           // Create the executor's working directory
           val executorDir = new File(workDir, appId + "/" + execId)
           if (!executorDir.mkdirs()) {
             throw new IOException("Failed to create directory " + executorDir)
           }
 
+          /*
+          为executor创建本地目录，根据 SPARK_EXECUTOR_DIRS ，app完成时由worker删除
+
+          @author yushuanghe
+           */
           // Create local dirs for the executor. These are passed to the executor via the
           // SPARK_EXECUTOR_DIRS environment variable, and deleted by the Worker when the
           // application finishes.
@@ -452,6 +469,12 @@ private[deploy] class Worker(
             }.toSeq
           }
           appDirectories(appId) = appLocalDirs
+
+          /*
+          创建 ExecutorRunner 线程
+
+          @author yushuanghe
+           */
           val manager = new ExecutorRunner(
             appId,
             execId,
@@ -468,10 +491,31 @@ private[deploy] class Worker(
             workerUri,
             conf,
             appLocalDirs, ExecutorState.RUNNING)
+
+          /*
+          把 ExecutorRunner 加入本地缓存
+
+          @author yushuanghe
+           */
           executors(appId + "/" + execId) = manager
+          /*
+          启动 ExecutorRunner 线程
+
+          @author yushuanghe
+           */
           manager.start()
+          /*
+          支出资源
+
+          @author yushuanghe
+           */
           coresUsed += cores_
           memoryUsed += memory_
+          /*
+          给master发送 ExecutorStateChanged 消息
+
+          @author yushuanghe
+           */
           sendToMaster(ExecutorStateChanged(appId, execId, manager.state, None, None))
         } catch {
           case e: Exception => {
@@ -480,6 +524,11 @@ private[deploy] class Worker(
               executors(appId + "/" + execId).kill()
               executors -= appId + "/" + execId
             }
+            /*
+            出现异常，给master发送 ExecutorStateChanged 消息
+
+            @author yushuanghe
+             */
             sendToMaster(ExecutorStateChanged(appId, execId, ExecutorState.FAILED,
               Some(e.toString), None))
           }
@@ -503,8 +552,26 @@ private[deploy] class Worker(
         }
       }
 
+      /*
+      worker在接收到LaunchDriver后，启动一个DriverRunner线程
+      创建driver的工作目录
+      封装启动driver的命令，用ProcessBuilder启动driver
+      driver执行完，向他所属的worker发送DriverStateChanged消息
+      worker调用handleDriverStateChanged方法
+      向master发送DriverStateChanged消息
+      将driver从本地缓存中移除，加入已完成队列，释放资源
+
+      @author yushuanghe
+       */
     case LaunchDriver(driverId, driverDesc) => {
       logInfo(s"Asked to launch driver $driverId")
+      /*
+      创建 DriverRunner 线程
+      DriverRunner:
+      管理一个driver的执行，包括在driver失败时自动重启driver。目前，这种方式仅仅适用于standalone集群部署模式
+
+      @author yushuanghe
+       */
       val driver = new DriverRunner(
         conf,
         driverId,
@@ -514,9 +581,24 @@ private[deploy] class Worker(
         self,
         workerUri,
         securityMgr)
+      /*
+      把 DriverRunner 加入本地缓存
+
+      @author yushuanghe
+       */
       drivers(driverId) = driver
+      /*
+      启动DriverRunner线程
+
+      @author yushuanghe
+       */
       driver.start()
 
+      /*
+      支出资源
+
+      @author yushuanghe
+       */
       coresUsed += driverDesc.cores
       memoryUsed += driverDesc.mem
     }
@@ -531,6 +613,11 @@ private[deploy] class Worker(
       }
     }
 
+      /*
+      driver执行完以后， DriverRunner 线程会发送一个状态给worker，worker会发送给master DriverStateChanged 事件，master进行状态改变处理
+
+      @author yushuanghe
+       */
     case driverStateChanged @ DriverStateChanged(driverId, state, exception) => {
       handleDriverStateChanged(driverStateChanged)
     }
@@ -644,16 +731,41 @@ private[deploy] class Worker(
       case _ =>
         logDebug(s"Driver $driverId changed state to $state")
     }
+    /*
+    给master发送 DriverStateChanged 消息
+
+    @author yushuanghe
+     */
     sendToMaster(driverStateChanged)
+    /*
+    将driver从本地缓存移除
+
+    @author yushuanghe
+     */
     val driver = drivers.remove(driverId).get
+    /*
+    将driver加入已完成driver队列
+
+    @author yushuanghe
+     */
     finishedDrivers(driverId) = driver
     trimFinishedDriversIfNecessary()
+    /*
+    释放worker资源
+
+    @author yushuanghe
+     */
     memoryUsed -= driver.driverDesc.mem
     coresUsed -= driver.driverDesc.cores
   }
 
   private[worker] def handleExecutorStateChanged(executorStateChanged: ExecutorStateChanged):
     Unit = {
+    /*
+    向master发送 ExecutorStateChanged 信息
+
+    @author yushuanghe
+     */
     sendToMaster(executorStateChanged)
     val state = executorStateChanged.state
     if (ExecutorState.isFinished(state)) {
@@ -666,9 +778,24 @@ private[deploy] class Worker(
           logInfo("Executor " + fullId + " finished with state " + state +
             message.map(" message " + _).getOrElse("") +
             exitStatus.map(" exitStatus " + _).getOrElse(""))
+          /*
+          在内存缓存中删除executor
+
+          @author yushuanghe
+           */
           executors -= fullId
+          /*
+          已完成executor队列添加executor
+
+          @author yushuanghe
+           */
           finishedExecutors(fullId) = executor
           trimFinishedExecutorsIfNecessary()
+          /*
+          释放worker资源
+
+          @author yushuanghe
+           */
           coresUsed -= executor.cores
           memoryUsed -= executor.memory
         case None =>

@@ -72,10 +72,25 @@ private[deploy] class DriverRunner(
 
   /** Starts a thread to run and manage the driver. */
   private[worker] def start() = {
+    /*
+    创建java线程运行并管理driver
+
+    @author yushuanghe
+     */
     new Thread("DriverRunner for " + driverId) {
       override def run() {
         try {
+          /*
+          创建driver的工作目录
+
+          @author yushuanghe
+           */
           val driverDir = createWorkingDirectory()
+          /*
+          下载用户上传的jar（maven的jar包）
+
+          @author yushuanghe
+           */
           val localJarFilename = downloadUserJar(driverDir)
 
           def substituteVariables(argument: String): String = argument match {
@@ -84,15 +99,31 @@ private[deploy] class DriverRunner(
             case other => other
           }
 
+          /*
+          构建 ProcessBuilder
+          传入了driver的启动命令等信息
+
+          @author yushuanghe
+           */
           // TODO: If we add ability to submit multiple jars they should also be added here
           val builder = CommandUtils.buildProcessBuilder(driverDesc.command, securityManager,
             driverDesc.mem, sparkHome.getAbsolutePath, substituteVariables)
+          /*
+          通过 ProcessBuilder 启动driver进程
+
+          @author yushuanghe
+           */
           launchDriver(builder, driverDir, driverDesc.supervise)
         }
         catch {
           case e: Exception => finalException = Some(e)
         }
 
+        /*
+        对driver的退出状态做一些处理
+
+        @author yushuanghe
+         */
         val state =
           if (killed) {
             DriverState.KILLED
@@ -107,6 +138,11 @@ private[deploy] class DriverRunner(
 
         finalState = Some(state)
 
+        /*
+        DriverRunner 线程向它所属的worker 发送 DriverStateChanged 事件
+
+        @author yushuanghe
+         */
         worker.send(DriverStateChanged(driverId, state, finalException))
       }
     }.start()
@@ -167,6 +203,11 @@ private[deploy] class DriverRunner(
   private def launchDriver(builder: ProcessBuilder, baseDir: File, supervise: Boolean) {
     builder.directory(baseDir)
     def initialize(process: Process): Unit = {
+      /*
+      重定向 stdout 和 stderr 输出流到文件中
+
+      @author yushuanghe
+       */
       // Redirect stdout and stderr to files
       val stdout = new File(baseDir, "stdout")
       CommandUtils.redirectStream(process.getInputStream, stdout)
@@ -199,6 +240,11 @@ private[deploy] class DriverRunner(
       }
 
       val processStart = clock.getTimeMillis()
+      /*
+      启动driver进程
+
+      @author yushuanghe
+       */
       val exitCode = process.get.waitFor()
       if (clock.getTimeMillis() - processStart > successfulRunDuration * 1000) {
         waitSeconds = 1
