@@ -17,17 +17,17 @@
 
 package org.apache.spark.scheduler.cluster
 
+import java.nio.ByteBuffer
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 
 import scala.collection.mutable.{ArrayBuffer, HashMap, HashSet}
-
 import org.apache.spark.rpc._
 import org.apache.spark.{ExecutorAllocationClient, Logging, SparkEnv, SparkException, TaskState}
 import org.apache.spark.scheduler._
 import org.apache.spark.scheduler.cluster.CoarseGrainedClusterMessages._
 import org.apache.spark.scheduler.cluster.CoarseGrainedSchedulerBackend.ENDPOINT_NAME
-import org.apache.spark.util.{ThreadUtils, SerializableBuffer, AkkaUtils, Utils}
+import org.apache.spark.util.{AkkaUtils, SerializableBuffer, ThreadUtils, Utils}
 
 /**
  * A scheduler backend that waits for coarse grained executors to connect to it through Akka.
@@ -105,6 +105,12 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     }
 
     override def receive: PartialFunction[Any, Unit] = {
+      /*
+      处理task状态改变的事件
+      task提交给executor和task执行结束由executor发送给driver
+
+      @author yushuanghe
+       */
       case StatusUpdate(executorId, taskId, state, data) =>
         scheduler.statusUpdate(taskId, state, data.value)
         if (TaskState.isFinished(state)) {
@@ -119,6 +125,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           }
         }
 
+        /*
+        接收 ReviveOffers 消息，调用 makeOffers 方法
+
+        @author yushuanghe
+         */
       case ReviveOffers =>
         makeOffers()
 
@@ -190,9 +201,25 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
     private def makeOffers() {
       // Filter out executors under killing
       val activeExecutors = executorDataMap.filterKeys(executorIsAlive)
+      /*
+      WorkerOffer 代表了每个executor可用的cpu资源数量
+
+      @author yushuanghe
+       */
       val workOffers = activeExecutors.map { case (id, executorData) =>
         new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
       }.toSeq
+
+      /*
+      第一步
+      调用 TaskSchedulerImpl 的 resourceOffers 方法，执行任务分配算法，将各个task分配到executor上去
+
+      第二步
+      分配好task到executor上之后，执行自己的 launchTasks 方法，
+      将分配的task发送 LaunchTask 消息到 对应的executor上去，由executor启动并执行task
+
+      @author yushuanghe
+       */
       launchTasks(scheduler.resourceOffers(workOffers))
     }
 
@@ -220,10 +247,20 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
         !executorsPendingLossReason.contains(executorId)
     }
 
+    /*
+    根据分配好的情况，在executor上启动相应的task
+
+    @author yushuanghe
+     */
     // Launch tasks returned by a set of resource offers
     private def launchTasks(tasks: Seq[Seq[TaskDescription]]) {
       for (task <- tasks.flatten) {
-        val serializedTask = ser.serialize(task)
+        /*
+        首先将每个executor要执行的task信息，进行序列化操作
+
+        @author yushuanghe
+         */
+        val serializedTask: ByteBuffer = ser.serialize(task)
         if (serializedTask.limit >= akkaFrameSize - AkkaUtils.reservedSizeBytes) {
           scheduler.taskIdToTaskSetManager.get(task.taskId).foreach { taskSetMgr =>
             try {
@@ -239,8 +276,23 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
           }
         }
         else {
+          /*
+          找到对应的executor
+
+          @author yushuanghe
+           */
           val executorData = executorDataMap(task.executorId)
+          /*
+          executor减去要使用的cpu资源
+
+          @author yushuanghe
+           */
           executorData.freeCores -= scheduler.CPUS_PER_TASK
+          /*
+          向executor发送 LaunchTask 消息
+
+          @author yushuanghe
+           */
           executorData.executorEndpoint.send(LaunchTask(new SerializableBuffer(serializedTask)))
         }
       }
@@ -342,6 +394,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
   }
 
   override def reviveOffers() {
+    /*
+    给内部类 DriverEndpoint 发送 ReviveOffers 消息
+
+    @author yushuanghe
+     */
     driverEndpoint.send(ReviveOffers)
   }
 
