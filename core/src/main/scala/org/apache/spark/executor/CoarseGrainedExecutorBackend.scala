@@ -52,11 +52,32 @@ private[spark] class CoarseGrainedExecutorBackend(
   // to be changed so that we don't share the serializer instance across threads
   private[this] val ser: SerializerInstance = env.closureSerializer.newInstance()
 
+  /*
+  Executor注册机制
+
+  worker中为app启动的executor，实际上是启动了CoarseGrainedExecutorBackend进程
+  CoarseGrainedSchedulerBackend进程启动成功之后，会立即向Driver（TaskScheduler的后台进程）发送RegisterExecutor消息
+  注册成功之后，会返回RegisteredExecutor消息
+
+  netty组件初始化时发送 OnStart 消息,调用 endpoint.onStart()
+
+  @author yushuanghe
+   */
   override def onStart() {
     logInfo("Connecting to driver: " + driverUrl)
+    /*
+    获取了driver的 Endpoint
+
+    @author yushuanghe
+     */
     rpcEnv.asyncSetupEndpointRefByURI(driverUrl).flatMap { ref =>
       // This is a very fast action so we can use "ThreadUtils.sameThread"
       driver = Some(ref)
+      /*
+      向driver发送 RegisterExecutor 消息
+
+      @author yushuanghe
+       */
       ref.ask[RegisterExecutorResponse](
         RegisterExecutor(executorId, self, hostPort, cores, extractLogUrls))
     }(ThreadUtils.sameThread).onComplete {
@@ -78,21 +99,48 @@ private[spark] class CoarseGrainedExecutorBackend(
   }
 
   override def receive: PartialFunction[Any, Unit] = {
+    /*
+    executor反向注册成功之后，driver返回 RegisteredExecutor 消息
+    此时 CoarseGrainedExecutorBackend ，会 new Executor 作为执行句柄
+    其实它的大部分功能，都是通过 Executor 实现的
+
+    @author yushuanghe
+     */
     case RegisteredExecutor(hostname) =>
       logInfo("Successfully registered with driver")
+      /*
+      new Executor 作为执行句柄
+
+      @author yushuanghe
+       */
       executor = new Executor(executorId, hostname, env, userClassPath, isLocal = false)
 
     case RegisterExecutorFailed(message) =>
       logError("Slave registration failed: " + message)
       System.exit(1)
 
+      /*
+      启动task
+
+      @author yushuanghe
+       */
     case LaunchTask(data) =>
       if (executor == null) {
         logError("Received LaunchTask command but executor was null")
         System.exit(1)
       } else {
+        /*
+        反序列化task
+
+        @author yushuanghe
+         */
         val taskDesc = ser.deserialize[TaskDescription](data.value)
         logInfo("Got assigned task " + taskDesc.taskId)
+        /*
+        用内部的执行句柄 Executor 的 launchTask 方法来启动一个task
+
+        @author yushuanghe
+         */
         executor.launchTask(this, taskId = taskDesc.taskId, attemptNumber = taskDesc.attemptNumber,
           taskDesc.name, taskDesc.serializedTask)
       }

@@ -145,6 +145,14 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
 
     override def receiveAndReply(context: RpcCallContext): PartialFunction[Any, Unit] = {
 
+      /*
+      TaskSchedulerImpl的后台进程SparkDeploySchedulerBackend
+      CoarseGrainedSchedulerBackend.DriverEndpoint.receiveAndReply接收RegisterExecutor消息
+      由TaskScheduler的后台进程接收executor的反向注册
+      返回RegisteredExecutor消息
+
+      @author yushuanghe
+       */
       case RegisterExecutor(executorId, executorRef, hostPort, cores, logUrls) =>
         if (executorDataMap.contains(executorId)) {
           context.reply(RegisterExecutorFailed("Duplicate executor ID: " + executorId))
@@ -171,6 +179,11 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val rpcEnv: Rp
               logDebug(s"Decremented number of pending executors ($numPendingExecutors left)")
             }
           }
+          /*
+          给 CoarseGrainedExecutorBackend 返回 RegisteredExecutor 消息
+
+          @author yushuanghe
+           */
           // Note: some tests expect the reply to come after we put the executor in the map
           context.reply(RegisteredExecutor(executorAddress.host))
           listenerBus.post(

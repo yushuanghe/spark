@@ -116,15 +116,40 @@ private[spark] class Executor(
 
   startDriverHeartbeater()
 
+  /*
+  为每个task创建一个TaskRunner
+  把TaskRunner放入线程池threadPool中执行task
+
+  @author yushuanghe
+   */
   def launchTask(
       context: ExecutorBackend,
       taskId: Long,
       attemptNumber: Int,
       taskName: String,
       serializedTask: ByteBuffer): Unit = {
+    /*
+    对于每个task都会创建一个 TaskRunner
+    TaskRunner 继承 Java的 Runnable
+
+    @author yushuanghe
+     */
     val tr = new TaskRunner(context, taskId = taskId, attemptNumber = attemptNumber, taskName,
       serializedTask)
+    /*
+    将 TaskRunner 放入内存缓存 runningTasks （ConcurrentHashMap ，分段同步机制）
+
+    @author yushuanghe
+     */
     runningTasks.put(taskId, tr)
+    /*
+    threadPool: Java的 ThreadPoolExecutor 线程池
+    private val threadPool = ThreadUtils.newDaemonCachedThreadPool("Executor task launch worker")
+    将task封装在一个线程中（TaskRunner），直接将线程丢入线程池，进行执行
+    线程池自动实现了排队机制的，也就是说，如果线程池内的线程暂时没有空闲的，那么丢进来的线程都是要排队的
+
+    @author yushuanghe
+     */
     threadPool.execute(tr)
   }
 

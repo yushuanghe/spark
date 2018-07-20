@@ -75,6 +75,11 @@ private[netty] class Inbox(
   @GuardedBy("this")
   private var numActiveThreads = 0
 
+  /*
+  netty组件初始化时发送 OnStart 消息,调用 endpoint.onStart()
+
+  @author yushuanghe
+   */
   // OnStart should be the first message to process
   inbox.synchronized {
     messages.add(OnStart)
@@ -118,6 +123,11 @@ private[netty] class Inbox(
             })
 
           case OnStart =>
+            /*
+            netty组件初始化时发送 OnStart 消息,调用 endpoint.onStart()
+
+            @author yushuanghe
+             */
             endpoint.onStart()
             if (!endpoint.isInstanceOf[ThreadSafeRpcEndpoint]) {
               inbox.synchronized {
